@@ -15,6 +15,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import java.time.temporal.ChronoUnit;
+
 /**
  * Grade transcript of a student.
  */
@@ -63,7 +65,7 @@ public class GradeReport {
                 } else {
                     BigDecimal raw = (BigDecimal) row.get("raw_points");
                     BigDecimal max = (BigDecimal) row.get("max_points");
-                    BigDecimal grade = raw.multiply(new BigDecimal("20")).divide(max, 1, RoundingMode.HALF_UP);
+                    BigDecimal grade = computeFinalGrade(raw, max, deadline, submittedAt);
                     line.put("status", "CORRIGÉ");
                     line.put("grade", grade);
                     line.put("feedback", row.get("feedback"));
@@ -83,4 +85,20 @@ public class GradeReport {
         report.put("average", graded == 0 ? null : total.divide(new BigDecimal(graded), 2, RoundingMode.HALF_UP));
         return report;
     }
+
+    private BigDecimal computeFinalGrade(BigDecimal raw, BigDecimal max, LocalDate deadline,
+            LocalDateTime submittedAt) {
+        long lateDays = 0;
+        if (submittedAt.toLocalDate().isAfter(deadline)) {
+            lateDays = Math.max(0, ChronoUnit.DAYS.between(deadline, submittedAt.toLocalDate()));
+        }
+        BigDecimal penaltyRate = BigDecimal.valueOf(Math.min(0.50, 0.10 * lateDays));
+        BigDecimal rawGrade = raw.multiply(new BigDecimal("20")).divide(max, 6, RoundingMode.HALF_UP);
+        BigDecimal penalizedGrade = rawGrade.multiply(BigDecimal.ONE.subtract(penaltyRate));
+        if (penalizedGrade.compareTo(BigDecimal.ZERO) < 0) {
+            penalizedGrade = BigDecimal.ZERO;
+        }
+        return penalizedGrade.setScale(1, RoundingMode.HALF_UP);
+    }
+
 }

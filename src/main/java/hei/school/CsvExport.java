@@ -10,8 +10,16 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.RoundingMode;
+import java.sql.Date;
+import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+
 /**
- * Grades export for the registrar's office (opened in Excel, semicolon separator).
+ * Grades export for the registrar's office (opened in Excel, semicolon
+ * separator).
  */
 @RestController
 public class CsvExport {
@@ -32,9 +40,11 @@ public class CsvExport {
         for (Map<String, Object> row : rows) {
             String note = "";
             if (row.get("raw_points") != null) {
-                double n = ((BigDecimal) row.get("raw_points")).doubleValue()
-                        / ((BigDecimal) row.get("max_points")).doubleValue() * 20;
-                n = Math.floor(n * 10) / 10;
+                double rawPoints = ((BigDecimal) row.get("raw_points")).doubleValue();
+                double maxPoints = ((BigDecimal) row.get("max_points")).doubleValue();
+                LocalDate deadline = ((Date) row.get("deadline")).toLocalDate();
+                LocalDateTime submittedAt = ((Timestamp) row.get("submitted_at")).toLocalDateTime();
+                double n = computeFinalGrade(rawPoints, maxPoints, deadline, submittedAt);
                 note = String.valueOf(n).replace('.', ',');
             }
             csv.append(row.get("reference")).append(';')
@@ -52,5 +62,17 @@ public class CsvExport {
                 .header("Content-Type", "text/csv; charset=UTF-8")
                 .header("Content-Disposition", "attachment; filename=\"notes-kilasy.csv\"")
                 .body(csv.toString());
+    }
+
+    private double computeFinalGrade(double rawPoints, double maxPoints, LocalDate deadline,
+            LocalDateTime submittedAt) {
+        long lateDays = 0;
+        if (submittedAt.toLocalDate().isAfter(deadline)) {
+            lateDays = Math.max(0, ChronoUnit.DAYS.between(deadline, submittedAt.toLocalDate()));
+        }
+        double penaltyRate = Math.min(0.50, 0.10 * lateDays);
+        double rawGrade = (rawPoints / maxPoints) * 20.0;
+        double penalizedGrade = Math.max(0.0, rawGrade * (1.0 - penaltyRate));
+        return BigDecimal.valueOf(penalizedGrade).setScale(1, RoundingMode.HALF_UP).doubleValue();
     }
 }

@@ -20,6 +20,8 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.temporal.ChronoUnit;
+
 @RestController
 public class SubmissionController {
 
@@ -53,7 +55,8 @@ public class SubmissionController {
             return ResponseEntity.status(404).body(Map.of("error", "Étudiant introuvable"));
         }
         Integer already = jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM submission WHERE exercise_id = ? AND student_id = ?", Integer.class, id, studentId);
+                "SELECT count(*) FROM submission WHERE exercise_id = ? AND student_id = ?", Integer.class, id,
+                studentId);
         if (already != null && already > 0) {
             return ResponseEntity.status(409).body(Map.of("error", "Cet étudiant a déjà soumis cet exercice"));
         }
@@ -99,7 +102,7 @@ public class SubmissionController {
             double raw = ((BigDecimal) row.get("raw_points")).doubleValue();
             double max = ((BigDecimal) row.get("max_points")).doubleValue();
             result.put("rawPoints", raw);
-            result.put("grade", Math.round(raw / max * 20 * 10) / 10.0);
+            result.put("grade", computeFinalGrade(raw, max, deadline, submittedAt));
             result.put("feedback", row.get("feedback"));
         }
         return ResponseEntity.ok(result);
@@ -131,12 +134,11 @@ public class SubmissionController {
                 points, feedback, id);
 
         // grade out of 20
-        double grade = Math.round(points / max * 20 * 10) / 10.0;
-
         LocalDate deadline = ((java.sql.Date) row.get("deadline")).toLocalDate();
         LocalDateTime submittedAt = ((Timestamp) row.get("submitted_at")).toLocalDateTime();
         boolean late = submittedAt.toLocalDate().isAfter(deadline);
-
+        double grade = computeFinalGrade(points, max, deadline, submittedAt);
+        
         // notify the student by email
         String fullName = (String) row.get("full_name");
         String firstName = fullName.split(" ")[0];
@@ -163,5 +165,17 @@ public class SubmissionController {
         result.put("late", late);
         result.put("feedback", feedback);
         return ResponseEntity.ok(result);
+    }
+
+    private double computeFinalGrade(double rawPoints, double maxPoints, LocalDate deadline,
+            LocalDateTime submittedAt) {
+        long lateDays = 0;
+        if (submittedAt.toLocalDate().isAfter(deadline)) {
+            lateDays = Math.max(0, ChronoUnit.DAYS.between(deadline, submittedAt.toLocalDate()));
+        }
+        double penaltyRate = Math.min(0.50, 0.10 * lateDays);
+        double rawGrade = (rawPoints / maxPoints) * 20.0;
+        double penalizedGrade = Math.max(0.0, rawGrade * (1.0 - penaltyRate));
+        return Math.round(penalizedGrade * 10.0) / 10.0;
     }
 }
