@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
+import java.time.temporal.ChronoUnit;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -99,7 +99,20 @@ public class SubmissionController {
             double raw = ((BigDecimal) row.get("raw_points")).doubleValue();
             double max = ((BigDecimal) row.get("max_points")).doubleValue();
             result.put("rawPoints", raw);
-            result.put("grade", Math.round(raw / max * 20 * 10) / 10.0);
+            double grade = raw / max * 20;
+            long lateDays = ChronoUnit.DAYS.between(deadline, submittedAt.toLocalDate());
+            if (lateDays > 0) {
+                long penaltyPercent = lateDays * 10;
+                if (penaltyPercent > 50) {
+                    penaltyPercent = 50;
+                }
+                grade = grade * (100 - penaltyPercent) / 100;
+            }
+            if (grade < 0) {
+                grade = 0;
+            }
+            grade = Math.round(grade * 10) / 10.0;
+            result.put("grade", grade);
             result.put("feedback", row.get("feedback"));
         }
         return ResponseEntity.ok(result);
@@ -131,11 +144,23 @@ public class SubmissionController {
                 points, feedback, id);
 
         // grade out of 20
-        double grade = Math.round(points / max * 20 * 10) / 10.0;
-
         LocalDate deadline = ((java.sql.Date) row.get("deadline")).toLocalDate();
         LocalDateTime submittedAt = ((Timestamp) row.get("submitted_at")).toLocalDateTime();
         boolean late = submittedAt.toLocalDate().isAfter(deadline);
+
+        double grade = points / max * 20;
+        long lateDays = ChronoUnit.DAYS.between(deadline, submittedAt.toLocalDate());
+        if (lateDays > 0) {
+            long penaltyPercent = lateDays * 10;
+            if (penaltyPercent > 50) {
+                penaltyPercent = 50;
+            }
+            grade = grade * (100 - penaltyPercent) / 100;
+        }
+        if (grade < 0) {
+            grade = 0;
+        }
+        grade = Math.round(grade * 10) / 10.0;
 
         // notify the student by email
         String fullName = (String) row.get("full_name");

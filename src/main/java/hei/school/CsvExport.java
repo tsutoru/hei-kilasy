@@ -3,6 +3,12 @@ package hei.school;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.math.RoundingMode;
+import java.sql.Date;
+import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -32,9 +38,23 @@ public class CsvExport {
         for (Map<String, Object> row : rows) {
             String note = "";
             if (row.get("raw_points") != null) {
-                double n = ((BigDecimal) row.get("raw_points")).doubleValue()
-                        / ((BigDecimal) row.get("max_points")).doubleValue() * 20;
-                n = Math.floor(n * 10) / 10;
+                double raw = ((BigDecimal) row.get("raw_points")).doubleValue();
+                double max = ((BigDecimal) row.get("max_points")).doubleValue();
+                LocalDate deadline = ((Date) row.get("deadline")).toLocalDate();
+                LocalDateTime submittedAt = ((Timestamp) row.get("submitted_at")).toLocalDateTime();
+                double n = raw / max * 20;
+                long lateDays = ChronoUnit.DAYS.between(deadline, submittedAt.toLocalDate());
+                if (lateDays > 0) {
+                    long penaltyPercent = lateDays * 10;
+                    if (penaltyPercent > 50) {
+                        penaltyPercent = 50;
+                    }
+                    n = n * (100 - penaltyPercent) / 100;
+                }
+                if (n < 0) {
+                    n = 0;
+                }
+                n = Math.round(n * 10) / 10.0;
                 note = String.valueOf(n).replace('.', ',');
             }
             csv.append(row.get("reference")).append(';')

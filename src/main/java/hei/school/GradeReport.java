@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.temporal.ChronoUnit;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -63,7 +64,20 @@ public class GradeReport {
                 } else {
                     BigDecimal raw = (BigDecimal) row.get("raw_points");
                     BigDecimal max = (BigDecimal) row.get("max_points");
-                    BigDecimal grade = raw.multiply(new BigDecimal("20")).divide(max, 1, RoundingMode.HALF_UP);
+                    BigDecimal grade = raw.multiply(new BigDecimal("20")).divide(max, 6, RoundingMode.HALF_UP);
+                    long lateDays = ChronoUnit.DAYS.between(deadline, submittedAt.toLocalDate());
+                    if (lateDays > 0) {
+                        long penaltyPercent = lateDays * 10;
+                        if (penaltyPercent > 50) {
+                            penaltyPercent = 50;
+                        }
+                        grade = grade.multiply(BigDecimal.valueOf(100 - penaltyPercent))
+                                .divide(new BigDecimal("100"), 6, RoundingMode.HALF_UP);
+                    }
+                    if (grade.compareTo(BigDecimal.ZERO) < 0) {
+                        grade = BigDecimal.ZERO;
+                    }
+                    grade = grade.setScale(1, RoundingMode.HALF_UP);
                     line.put("status", "CORRIGÉ");
                     line.put("grade", grade);
                     line.put("feedback", row.get("feedback"));
